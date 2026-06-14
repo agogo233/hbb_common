@@ -1570,7 +1570,7 @@ mod tests {
             id,
             JobType::Generic,
             "/fake/remote".to_string(),
-            DataSource::FilePath(std::env::temp_dir().join(format!("rustdesk_validation_{id}"))),
+            DataSource::FilePath(std::env::temp_dir().join(format!("mydesk_validation_{id}"))),
             0,
             false,
             true,
