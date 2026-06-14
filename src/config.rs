@@ -2754,6 +2754,7 @@ fn get_or(
         .or(b.get(k))
         .or(c.read().unwrap().get(k))
         .cloned()
+        .filter(|x| !x.is_empty())
 }
 
 #[inline]
