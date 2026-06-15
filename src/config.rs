@@ -3000,7 +3000,7 @@ pub mod keys {
     pub const OPTION_ALLOW_DEEP_LINK_PASSWORD: &str = "allow-deep-link-password";
     pub const OPTION_ALLOW_DEEP_LINK_SERVER_SETTINGS: &str = "allow-deep-link-server-settings";
     pub const OPTION_ONE_WAY_FILE_TRANSFER: &str = "one-way-file-transfer";
-    pub const OPTION_ALLOW_HTTPS_21114: &str = "allow-https-21114";
+    pub const OPTION_ALLOW_HTTPS_31114: &str = "allow-https-31114";
     pub const OPTION_USE_RAW_TCP_FOR_API: &str = "use-raw-tcp-for-api";
     pub const OPTION_ALLOW_HOSTNAME_AS_ID: &str = "allow-hostname-as-id";
     pub const OPTION_HIDE_POWERED_BY_ME: &str = "hide-powered-by-me";
@@ -3210,7 +3210,7 @@ pub mod keys {
         OPTION_ALLOW_DEEP_LINK_PASSWORD,
         OPTION_ALLOW_DEEP_LINK_SERVER_SETTINGS,
         OPTION_ONE_WAY_FILE_TRANSFER,
-        OPTION_ALLOW_HTTPS_21114,
+        OPTION_ALLOW_HTTPS_31114,
         OPTION_ALLOW_HOSTNAME_AS_ID,
         OPTION_REGISTER_DEVICE,
         OPTION_HIDE_POWERED_BY_ME,
