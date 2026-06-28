@@ -104,9 +104,9 @@ pub const LINK_HEADLESS_LINUX_SUPPORT: &str =
 
 lazy_static::lazy_static! {
     pub static ref HELPER_URL: HashMap<&'static str, &'static str> = HashMap::from([
-        ("rustdesk docs home", LINK_DOCS_HOME),
-        ("rustdesk docs x11-required", LINK_DOCS_X11_REQUIRED),
-        ("rustdesk x11 headless", LINK_HEADLESS_LINUX_SUPPORT),
+        ("mydesk docs home", LINK_DOCS_HOME),
+        ("mydesk docs x11-required", LINK_DOCS_X11_REQUIRED),
+        ("mydesk x11 headless", LINK_HEADLESS_LINUX_SUPPORT),
         ]);
 }
 
