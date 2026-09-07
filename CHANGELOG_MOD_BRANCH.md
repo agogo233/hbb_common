@@ -55,6 +55,8 @@
 
 **修复方式**：在回退链中增加 `.filter(|x| !x.is_empty())`，使空字符串等价于 `None`，确保能继续向后回退到 `DEFAULT_SETTINGS`。
 
+**后续收窄**（避免误伤其它键的空值语义）：空值过滤仅对服务器连接键生效（`custom-rendezvous-server` / `relay-server` / `api-server`）；`enable-file-copy-paste` 等键在 `UserDefaultConfig` 路径显式存储的 `""` 恢复为真实值（`""` 视为关闭），不再被等价为「未设置」。
+
 **涉及文件**：`src/config.rs`
 
 ---

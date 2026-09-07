@@ -2738,6 +2738,15 @@ deserialize_default!(deserialize_hashmap_string_string, HashMap<String, String>)
 deserialize_default!(deserialize_hashmap_string_bool,  HashMap<String, bool>);
 deserialize_default!(deserialize_hashmap_resolutions, HashMap<String, Resolution>);
 
+/// Server connection keys treat an empty value as unset, so a stale `""` in a
+/// config file surfaces as unset to the caller (e.g. `unwrap_or_default()`).
+/// Other keys keep `""` as a real value.
+const EMPTY_MEANS_UNSET: &[&str] = &[
+    "custom-rendezvous-server",
+    "relay-server",
+    "api-server",
+];
+
 #[inline]
 fn get_or(
     a: &RwLock<HashMap<String, String>>,
@@ -2745,13 +2754,17 @@ fn get_or(
     c: &RwLock<HashMap<String, String>>,
     k: &str,
 ) -> Option<String> {
-    a.read()
+    match a
+        .read()
         .unwrap()
         .get(k)
         .or(b.get(k))
         .or(c.read().unwrap().get(k))
         .cloned()
-        .filter(|x| !x.is_empty())
+    {
+        Some(v) if v.is_empty() && EMPTY_MEANS_UNSET.contains(&k) => None,
+        v => v,
+    }
 }
 
 #[inline]
