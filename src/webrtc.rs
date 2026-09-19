@@ -99,6 +99,10 @@ pub struct WebRTCStream {
     // ICE has stopped hearing from the peer but the connection is not terminal yet. Kept out of
     // `state_notify` on purpose - see where it is set.
     disconnected: Arc<AtomicBool>,
+    // The largest message this stream will reassemble, lowered while the peer is unauthenticated.
+    // Shared by every clone, the `SESSIONS` entry included, because the receive path runs off a
+    // clone and the bound is about the pc, not about one handle.
+    max_recv_message: Arc<AtomicUsize>,
 }
 
 /// Whether a pc `new_inner` built is still wanted, shared by every `NewStreamHandoff` handed out
@@ -249,6 +253,7 @@ impl Clone for WebRTCStream {
             local_endpoint: self.local_endpoint.clone(),
             rx_probe: self.rx_probe.clone(),
             disconnected: self.disconnected.clone(),
+            max_recv_message: self.max_recv_message.clone(),
         }
     }
 }
@@ -549,6 +554,17 @@ impl WebRTCStream {
         ice_servers
     }
 
+    /// How many binding requests the answerer's ICE agent sends on a pair without a response
+    /// before giving up on it: 74 at the 200ms check interval is ~14.8s, just inside the 15s
+    /// persistence libwebrtc gives a pair (`CONNECTION_WRITE_TIMEOUT`), so both ends of a
+    /// browser session keep checking for about the same time. The ICE crate's default of 7
+    /// (~1.4s) is a server-side choice that assumes the other side keeps knocking; behind an
+    /// address-restricted NAT those requests are also what keep this side's mapping open to
+    /// the remote's checks, so stopping early closes the door on a pair that would have
+    /// connected once the path cleared, however long the remote keeps trying. Bounded by
+    /// `CONNECT_TIMEOUT` (18s).
+    const ICE_MAX_BINDING_REQUESTS: u16 = 74;
+
     /// Built and driven on `WEBRTC_RT`: every socket and background task the pc creates must
     /// belong to a runtime that outlives the session (see `WEBRTC_RT`). A caller that abandons
     /// this future mid-await leaves the setup task to finish there; the abandoned result then
@@ -617,6 +633,12 @@ impl WebRTCStream {
         let mut s = SettingEngine::default();
         s.detach_data_channels();
         s.set_ice_multicast_dns_mode(MulticastDnsMode::Disabled);
+        // Answerer only: `remote_endpoint` is empty when this side is the offerer. The
+        // desktop controller keeps the crate default so it stays an unchanged comparison
+        // point while the persistence experiment runs on the controlled side.
+        if !remote_endpoint.is_empty() {
+            s.set_ice_max_binding_requests(Some(Self::ICE_MAX_BINDING_REQUESTS));
+        }
         // fe80::/10 can only be bound together with a scope id, which `IpAddr` cannot carry, so
         // gathering one never yields a candidate - only a failed bind and a warning per address.
         // Spelled out because `is_unicast_link_local` is not stable on our MSRV.
@@ -883,6 +905,7 @@ impl WebRTCStream {
             local_endpoint: Arc::new(local_endpoint),
             rx_probe: RxProbe::new(),
             disconnected,
+            max_recv_message: Arc::new(AtomicUsize::new(MAX_RECV_MESSAGE)),
         };
         // Insert into the session cache, but never `await pc.close()` while holding this lock:
         // `close()` fires the peer-connection-state handler inline, which itself locks SESSIONS,
@@ -1176,6 +1199,14 @@ impl WebRTCStream {
         // not-supported
     }
 
+    /// See `Stream::set_max_packet_length`. Clamped to `MAX_RECV_MESSAGE`: the send path checks
+    /// against that constant, so a bound above it would only accept what no peer will ever send.
+    #[inline]
+    pub fn set_max_packet_length(&mut self, n: usize) {
+        self.max_recv_message
+            .store(n.min(MAX_RECV_MESSAGE), Ordering::Relaxed);
+    }
+
     #[inline]
     pub fn local_addr(&self) -> SocketAddr {
         SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0)
@@ -1466,7 +1497,7 @@ impl WebRTCStream {
             // Bound BEFORE growing: this framing carries no length, so an oversize message is only
             // discovered by accumulating it, and checking after the append would let `BytesMut`'s
             // reallocate-and-copy hold the old and the new buffer at once.
-            if acc.len() + (n - 1) > MAX_RECV_MESSAGE {
+            if acc.len() + (n - 1) > self.max_recv_message.load(Ordering::Relaxed) {
                 // Release the buffer, don't just truncate it: by definition it is near the cap
                 // here, and `recv_state` outlives this call through the `SESSIONS` clone.
                 *acc = BytesMut::new();
@@ -2355,6 +2386,68 @@ IHR5cCBzcmZseCByYWRkciAwLjAuMC4wIHJwb3J0IDY0MDA4XHJcbmE9ZW5kLW9mLWNhbmRpZGF0ZXNc
             let offerer = sender.await.unwrap().expect("send");
             // `WebRTCStream` has no `Drop`, so both pcs stay in `SESSIONS` unless closed here;
             // `test_cancelled_new_does_not_leak_the_pc` scans that map and would report them.
+            offerer.close().await;
+            answerer.close().await;
+        };
+        timeout(Duration::from_secs(60), body)
+            .await
+            .expect("WebRTC loopback did not complete in time");
+    }
+
+    // The bound `Stream::set_max_packet_length` lowers before authorization: a message above it
+    // must end the connection as it arrives, not be reassembled. Only the receiver's bound moves,
+    // so the sender still puts it on the wire, exactly as an unauthenticated peer would.
+    #[tokio::test]
+    async fn test_webrtc_max_packet_length_bounds_reassembly() {
+        let body = async {
+            let (mut offerer, mut answerer) = connect_loopback().await;
+            answerer.set_max_packet_length(16 * 1024);
+
+            offerer.send_raw(vec![0xCDu8; 8 * 1024]).await.unwrap();
+            let got = answerer.next().await.unwrap().unwrap();
+            assert_eq!(got.len(), 8 * 1024, "a message under the bound still arrives");
+
+            offerer.send_raw(vec![0xCDu8; 200_000]).await.unwrap();
+            match timeout(Duration::from_secs(10), answerer.next()).await {
+                Ok(Some(Err(e))) => assert!(
+                    e.to_string().contains("maximum frame size"),
+                    "unexpected error: {}",
+                    e
+                ),
+                Ok(Some(Ok(b))) => panic!("expected a refusal, got {} bytes", b.len()),
+                Ok(None) => panic!("expected a refusal, got EOF"),
+                Err(_) => panic!("answerer.next() hung on an oversize message"),
+            }
+
+            offerer.close().await;
+            answerer.close().await;
+        };
+        timeout(Duration::from_secs(60), body)
+            .await
+            .expect("WebRTC loopback did not complete in time");
+    }
+
+    // The other half of the same lifecycle: what was refused while the bound was low arrives once
+    // it is lifted, which is what authorization does on the server.
+    #[tokio::test]
+    async fn test_webrtc_max_packet_length_restores() {
+        let body = async {
+            let (mut offerer, mut answerer) = connect_loopback().await;
+            answerer.set_max_packet_length(16 * 1024);
+
+            offerer.send_raw(vec![0xCDu8; 8 * 1024]).await.unwrap();
+            let got = answerer.next().await.unwrap().unwrap();
+            assert_eq!(got.len(), 8 * 1024);
+
+            answerer.set_max_packet_length(usize::MAX);
+            offerer.send_raw(vec![0xCDu8; 200_000]).await.unwrap();
+            let got = timeout(Duration::from_secs(10), answerer.next())
+                .await
+                .expect("answerer.next() hung after the bound was lifted")
+                .unwrap()
+                .unwrap();
+            assert_eq!(got.len(), 200_000, "lifting the bound lets a large message through again");
+
             offerer.close().await;
             answerer.close().await;
         };
