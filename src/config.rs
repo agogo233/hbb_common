@@ -2890,6 +2890,8 @@ pub mod keys {
     pub const OPTION_ALLOW_INSECURE_TLS_FALLBACK: &str = "allow-insecure-tls-fallback";
     pub const OPTION_ALLOW_WEBRTC_CC: &str = "allow-webrtc-congestion-control";
     pub const OPTION_ALLOW_HOSTNAME_AS_ID: &str = "allow-hostname-as-id";
+    pub const OPTION_ALLOW_HTTPS_31114: &str = "allow-https-31114";
+    pub const OPTION_START_ON_BOOT: &str = "start-on-boot";
     pub const OPTION_DISABLE_CHANGE_PERMANENT_PASSWORD: &str = "disable-change-permanent-password";
     pub const OPTION_DISABLE_CHANGE_ID: &str = "disable-change-id";
     pub const OPTION_DISABLE_UNLOCK_PIN: &str = "disable-unlock-pin";
