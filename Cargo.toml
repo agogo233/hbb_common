@@ -60,8 +60,8 @@ tokio-native-tls = "0.3"
 # Fork of v0.26.2: upstream's WebSocketStream exposes get_config but no set_config, so a
 # message cap lowered before authorization could never be lifted again. One commit on top of
 # the tag; pinned by rev, not branch, because a fork branch can be rewritten under the lockfile.
-tokio-tungstenite = { git = "https://github.com/rustdesk-org/tokio-tungstenite", rev = "9c320de8e7c546cb654b017b7f4cbb4a5cc09cd9", version = "0.26", features = ["native-tls", "rustls-tls-native-roots", "rustls-tls-webpki-roots"] }
-tungstenite = { version = "0.26", features = ["native-tls", "rustls-tls-native-roots", "rustls-tls-webpki-roots"] }
+tokio-tungstenite = { git = "https://github.com/rustdesk-org/tokio-tungstenite", rev = "c241b11b03de4881faf1ecd2fe6e867c92f3013b", version = "0.29", features = ["native-tls", "rustls-tls-native-roots", "rustls-tls-webpki-roots"] }
+tungstenite = { version = "0.29", features = ["native-tls", "rustls-tls-native-roots", "rustls-tls-webpki-roots"] }
 rustls-platform-verifier = "0.6"
 rustls-pki-types = "1.11"
 rustls-native-certs = "0.8"
@@ -90,3 +90,10 @@ webrtc = "0.13.0" # keep in lockstep with [dependencies] webrtc (rustc 1.75 pin,
 [target.'cfg(target_os = "linux")'.dependencies]
 users = { version = "0.11" }
 x11 = "2.21"
+
+# Only takes effect when this crate is built on its own (tests, examples); a consumer's own
+# [patch] governs its build. Keep the rev in lockstep with rustdesk's root Cargo.toml.
+[patch.crates-io]
+webrtc = { git = "https://github.com/rustdesk-org/webrtc", rev = "49c89bd8d30e6e62e4c1a96cee38fdc11f79ef63" }
+webrtc-util = { git = "https://github.com/rustdesk-org/webrtc", rev = "49c89bd8d30e6e62e4c1a96cee38fdc11f79ef63" }
+webrtc-sctp = { git = "https://github.com/rustdesk-org/webrtc", rev = "49c89bd8d30e6e62e4c1a96cee38fdc11f79ef63" }

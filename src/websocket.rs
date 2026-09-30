@@ -5,7 +5,7 @@ use crate::{
     protobuf::Message,
     socket_client::split_host_port,
     sodiumoxide::crypto::secretbox::Key,
-    tcp::Encrypt,
+    tcp::{Encrypt, KxTranscript},
     tls::{get_cached_tls_accept_invalid_cert, get_cached_tls_type, upsert_tls_cache, TlsType},
     ResultType,
 };
@@ -216,9 +216,10 @@ impl WsFramedStream {
         self.encrypt = None;
     }
 
-    /// Both bounds, not just the message one: tungstenite reserves the whole declared payload of a
-    /// frame as soon as it passes `max_frame_size` (`protocol/frame/mod.rs`), so that is what keeps
-    /// a frame header from buying an allocation, while `max_message_size` bounds reassembly.
+    /// Both bounds, not just the message one: `max_frame_size` refuses an oversized frame on its
+    /// header, before any of it is buffered, while `max_message_size` bounds reassembly across a
+    /// fragmented one. What a header on its own can allocate is `read_buffer_size`, the patched
+    /// fork growing the read buffer a chunk at a time rather than to the length a frame declares.
     #[inline]
     pub fn set_max_packet_length(&mut self, n: usize) {
         self.stream.set_config(|c| {
@@ -254,6 +255,17 @@ impl WsFramedStream {
     #[inline]
     pub fn set_key(&mut self, key: Key) {
         self.encrypt = Some(Encrypt::new(key));
+    }
+
+    #[inline]
+    pub fn set_key_split(
+        &mut self,
+        key: Key,
+        is_initiator: bool,
+        t: &KxTranscript,
+    ) -> ResultType<()> {
+        self.encrypt = Some(Encrypt::new_split(key, is_initiator, t)?);
+        Ok(())
     }
 
     #[inline]
@@ -314,6 +326,12 @@ impl WsFramedStream {
                     return Some(Ok(bytes));
                 }
                 WsMessage::Text(text) => {
+                    if self.is_secured() {
+                        return Some(Err(Error::new(
+                            ErrorKind::InvalidData,
+                            "WebSocket text frame received after encryption was enabled",
+                        )));
+                    }
                     let bytes = BytesMut::from(text.as_bytes());
                     return Some(Ok(bytes));
                 }
@@ -421,6 +439,33 @@ mod tests {
     use super::*;
     use crate::config::{keys, Config};
     use tokio::{io::AsyncWriteExt, net::TcpListener};
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_secured_stream_rejects_plaintext_text() {
+        sodiumoxide::init().expect("failed to initialize sodiumoxide");
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (tcp, _) = listener.accept().await.unwrap();
+            let mut stream = WebSocketStream::from_raw_socket(tcp, Role::Server, None).await;
+            stream
+                .send(WsMessage::Text("plaintext".into()))
+                .await
+                .unwrap();
+        });
+
+        let tcp = TcpStream::connect(addr).await.unwrap();
+        let mut client = WsFramedStream::from_tcp_stream(tcp, addr).await.unwrap();
+        client.set_key(Key([0x42; sodiumoxide::crypto::secretbox::KEYBYTES]));
+
+        let result = client.next().await;
+        assert!(
+            matches!(result, Some(Err(ref err)) if err.kind() == ErrorKind::InvalidData),
+            "secured stream accepted plaintext Text frame: {:?}",
+            result
+        );
+        server.await.unwrap();
+    }
 
     #[test]
     fn test_check_ws() {
