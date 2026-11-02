@@ -766,21 +766,21 @@ mod tests {
         );
         Config::set_option(keys::OPTION_WEBSOCKET_PORT.to_string(), "8443".to_string());
         assert_eq!(
-            check_ws("rustdesk.com:21116"),
+            check_ws("rustdesk.com:31116"),
             "wss://rustdesk.com:8443/ws/id"
         );
         assert_eq!(
-            check_ws("rustdesk.com:21117"),
+            check_ws("rustdesk.com:31117"),
             "wss://rustdesk.com:8443/ws/relay"
         );
         assert_eq!(
-            check_ws("relay.rustdesk.com:21117"),
+            check_ws("relay.rustdesk.com:31117"),
             "wss://relay.rustdesk.com:8443/ws/relay"
         );
         // a peer's server or a relay on another host keeps the default port
-        assert_eq!(check_ws("example.com:21116"), "wss://example.com/ws/id");
-        assert_eq!(check_ws("example.com:21117"), "wss://example.com/ws/relay");
-        assert_eq!(check_ws("127.0.0.1:21116"), "ws://127.0.0.1:21118");
+        assert_eq!(check_ws("example.com:31116"), "wss://example.com/ws/id");
+        assert_eq!(check_ws("example.com:31117"), "wss://example.com/ws/relay");
+        assert_eq!(check_ws("127.0.0.1:31116"), "ws://127.0.0.1:31118");
         // with no rendezvous server set, the public fallback is not one of ours
         Config::set_option("custom-rendezvous-server".to_string(), "".to_string());
         let fallback = Config::get_rendezvous_server();
